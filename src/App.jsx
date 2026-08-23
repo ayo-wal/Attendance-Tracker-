@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import Auth from './pages/Auth'
 import Dashboard from './pages/Dashboard'
 import CourseDetail from './pages/CourseDetail'
+import ResetPassword from './pages/ResetPassword'
 
 function Protected({ children }) {
   const { user, loading } = useAuth()
@@ -20,6 +21,7 @@ function Routed() {
         path="/auth"
         element={loading ? null : user ? <Navigate to="/" replace /> : <Auth />}
       />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route
         path="/"
         element={
