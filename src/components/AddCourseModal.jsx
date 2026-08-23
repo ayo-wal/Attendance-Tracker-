@@ -43,6 +43,7 @@ function SemesterTab({ onClose, onCreated }) {
   const { user } = useAuth()
   const [semester, setSemester] = useState('')
   const [selected, setSelected] = useState({}) // code -> bool
+  const [target, setTarget] = useState(75)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -74,7 +75,7 @@ function SemesterTab({ onClose, onCreated }) {
       total_classes: computeTotalClasses(c.type, c.credit),
       tracking_mode: 'quick',
       manual_absences: 0,
-      target_percent: 75,
+      target_percent: target,
     }))
 
     const { error } = await supabase.from('courses').insert(rows)
@@ -122,6 +123,20 @@ function SemesterTab({ onClose, onCreated }) {
         Uncheck anything you don't want tracked. Everything starts in "quick" mode — just tap +1
         when you miss a class.
       </p>
+
+      <div className="mb-3">
+        <label className="block text-xs text-muted mb-1">
+          Required attendance % (applied to all selected — you can change it per course later)
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={100}
+          value={target}
+          onChange={(e) => setTarget(Number(e.target.value))}
+          className="w-28 rounded-lg bg-surface-2 border border-border px-3 py-2 text-sm outline-none focus:border-accent"
+        />
+      </div>
 
       <div className="space-y-1.5 max-h-64 overflow-y-auto mb-4">
         {CURRICULUM[semester].map((c) => (
