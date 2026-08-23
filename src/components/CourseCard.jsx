@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom'
 import AttendanceGauge from './AttendanceGauge'
-import { summarize, projection } from '../lib/attendanceMath'
+import { summarizeCourse, projection } from '../lib/attendanceMath'
 
 export default function CourseCard({ course, records }) {
-  const { present, absent, total, percent } = summarize(records)
+  const { present, absent, total, percent } = summarizeCourse(course, records)
   const proj = projection(present, total, course.target_percent)
 
   return (
@@ -12,12 +12,15 @@ export default function CourseCard({ course, records }) {
       className="block bg-surface border border-border rounded-xl p-5 hover:border-accent transition"
     >
       <div className="flex justify-between items-start mb-3">
-        <div>
+        <div className="min-w-0">
           {course.code && (
             <div className="font-mono text-xs text-muted uppercase tracking-wide">{course.code}</div>
           )}
-          <h3 className="font-display font-semibold leading-tight">{course.name}</h3>
+          <h3 className="font-display font-semibold leading-tight truncate">{course.name}</h3>
         </div>
+        <span className="shrink-0 text-[10px] uppercase tracking-wide rounded-full border border-border px-2 py-0.5 text-muted">
+          {course.tracking_mode === 'quick' ? 'Quick' : 'Detailed'}
+        </span>
       </div>
 
       <div className="flex items-center justify-center py-2">
@@ -28,6 +31,11 @@ export default function CourseCard({ course, records }) {
         <span>
           {present}/{total} classes attended
         </span>
+        {(course.teacher1 || course.teacher2) && (
+          <span className="truncate max-w-[55%] text-right">
+            {[course.teacher1, course.teacher2].filter(Boolean).join(' / ')}
+          </span>
+        )}
       </div>
 
       <div
