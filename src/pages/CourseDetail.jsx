@@ -21,6 +21,8 @@ export default function CourseDetail() {
   const [teacher, setTeacher] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [editingTarget, setEditingTarget] = useState(false)
+  const [targetInput, setTargetInput] = useState(75)
 
   async function loadData() {
     setLoading(true)
@@ -34,6 +36,7 @@ export default function CourseDetail() {
     ])
     setCourse(courseData ?? null)
     setRecords(recordData ?? [])
+    if (courseData) setTargetInput(courseData.target_percent)
     setLoading(false)
   }
 
@@ -68,6 +71,19 @@ export default function CourseDetail() {
     setCourse({ ...course, manual_absences: next }) // optimistic
     const { error } = await supabase.from('courses').update({ manual_absences: next }).eq('id', id)
     if (error) setError(error.message)
+  }
+
+  async function saveTarget() {
+    const value = Math.max(1, Math.min(100, Number(targetInput) || 75))
+    setBusy(true)
+    setError('')
+    const { error } = await supabase.from('courses').update({ target_percent: value }).eq('id', id)
+    setBusy(false)
+    if (error) setError(error.message)
+    else {
+      setEditingTarget(false)
+      loadData()
+    }
   }
 
   async function switchMode(mode) {
@@ -125,6 +141,45 @@ export default function CourseDetail() {
             <Row label="Absent" value={absent} color="text-danger" />
             {!isQuick && <Row label="Cancelled (not counted)" value={cancelled} color="text-muted" />}
             {isQuick && <Row label="Total classes this semester" value={total} color="text-text" />}
+            <div className="flex justify-between items-center">
+              <span className="text-muted">Required attendance</span>
+              {editingTarget ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={targetInput}
+                    onChange={(e) => setTargetInput(e.target.value)}
+                    className="w-16 rounded-lg bg-surface-2 border border-border px-2 py-1 text-sm outline-none focus:border-accent"
+                    autoFocus
+                  />
+                  <button
+                    onClick={saveTarget}
+                    disabled={busy}
+                    className="text-xs text-accent hover:opacity-80 transition disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingTarget(false)
+                      setTargetInput(course.target_percent)
+                    }}
+                    className="text-xs text-muted hover:text-text transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setEditingTarget(true)}
+                  className="font-mono font-medium text-text hover:text-accent transition"
+                >
+                  {course.target_percent}% ✏️
+                </button>
+              )}
+            </div>
             <div
               className={`rounded-lg px-3 py-2 mt-3 font-medium ${
                 total === 0 ? 'bg-surface-2 text-muted' : proj.type === 'safe' ? 'bg-safe/10 text-safe' : 'bg-danger/10 text-danger'
