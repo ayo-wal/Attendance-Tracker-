@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import AttendanceGauge from '../components/AttendanceGauge'
 import { summarizeCourse, summarizeRecords, projection, computeTotalClasses } from '../lib/attendanceMath'
+import { getBracket, achievablePercent } from '../lib/marksBrackets'
 
 const STATUS_STYLES = {
   present: 'bg-safe/15 text-safe border-safe/30',
@@ -23,6 +24,7 @@ export default function CourseDetail() {
   const [error, setError] = useState('')
   const [editingTarget, setEditingTarget] = useState(false)
   const [targetInput, setTargetInput] = useState(75)
+  const [bracketWarning, setBracketWarning] = useState(null)
 
   async function loadData() {
     setLoading(true)
@@ -34,6 +36,26 @@ export default function CourseDetail() {
         .eq('course_id', id)
         .order('class_date', { ascending: false }),
     ])
+
+    if (courseData) {
+      // First time we see this course: seed its starting bracket silently
+      // (no warning — nothing's been "lost" yet).
+      if (courseData.last_bracket_marks == null) {
+        const total = courseData.total_classes || computeTotalClasses(courseData.course_type, courseData.credit)
+        const absentCount =
+          courseData.tracking_mode === 'quick'
+            ? courseData.manual_absences || 0
+            : summarizeRecords(recordData ?? []).absent
+        const bracket = getBracket(achievablePercent(total, absentCount))
+        const patch = {
+          last_bracket_marks: bracket.marks,
+          ...(courseData.auto_target ? { target_percent: bracket.min } : {}),
+        }
+        supabase.from('courses').update(patch).eq('id', id).then(() => {})
+        Object.assign(courseData, patch)
+      }
+    }
+
     setCourse(courseData ?? null)
     setRecords(recordData ?? [])
     if (courseData) setTargetInput(courseData.target_percent)
@@ -45,6 +67,22 @@ export default function CourseDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
+  // Checks whether an absence-count change knocked the course into a lower
+  // marks bracket, and if so returns the DB patch + fires the warning.
+  function evaluateBracketChange(oldAbsentCount, newAbsentCount) {
+    const total = course.total_classes || computeTotalClasses(course.course_type, course.credit)
+    const oldBracket = getBracket(achievablePercent(total, oldAbsentCount))
+    const newBracket = getBracket(achievablePercent(total, newAbsentCount))
+
+    if (newBracket.marks >= oldBracket.marks) return {}
+
+    setBracketWarning({ from: oldBracket, to: newBracket })
+    return {
+      last_bracket_marks: newBracket.marks,
+      ...(course.auto_target ? { target_percent: newBracket.min } : {}),
+    }
+  }
+
   async function logStatus(status) {
     setBusy(true)
     setError('')
@@ -55,9 +93,22 @@ export default function CourseDetail() {
       status,
       teacher: teacher || null,
     })
+    if (error) {
+      setBusy(false)
+      setError(error.message)
+      return
+    }
+
+    if (status === 'absent') {
+      const oldAbsent = summarizeRecords(records).absent
+      const patch = evaluateBracketChange(oldAbsent, oldAbsent + 1)
+      if (Object.keys(patch).length > 0) {
+        await supabase.from('courses').update(patch).eq('id', id)
+      }
+    }
+
     setBusy(false)
-    if (error) setError(error.message)
-    else loadData()
+    loadData()
   }
 
   async function deleteRecord(recordId) {
@@ -67,9 +118,14 @@ export default function CourseDetail() {
 
   async function adjustAbsences(delta) {
     const total = course.total_classes || computeTotalClasses(course.course_type, course.credit)
-    const next = Math.max(0, Math.min(total, (course.manual_absences || 0) + delta))
-    setCourse({ ...course, manual_absences: next }) // optimistic
-    const { error } = await supabase.from('courses').update({ manual_absences: next }).eq('id', id)
+    const oldAbsent = course.manual_absences || 0
+    const next = Math.max(0, Math.min(total, oldAbsent + delta))
+
+    const bracketPatch = delta > 0 ? evaluateBracketChange(oldAbsent, next) : {}
+    const patch = { manual_absences: next, ...bracketPatch }
+
+    setCourse({ ...course, ...patch }) // optimistic
+    const { error } = await supabase.from('courses').update(patch).eq('id', id)
     if (error) setError(error.message)
   }
 
@@ -84,6 +140,22 @@ export default function CourseDetail() {
       setEditingTarget(false)
       loadData()
     }
+  }
+
+  async function toggleAutoTarget() {
+    const nextAuto = !course.auto_target
+    setBusy(true)
+    const patch = { auto_target: nextAuto }
+    if (nextAuto) {
+      // switching back on: snap target to the current achievable bracket
+      const total = course.total_classes || computeTotalClasses(course.course_type, course.credit)
+      const absentCount = course.tracking_mode === 'quick' ? course.manual_absences || 0 : summarizeRecords(records).absent
+      patch.target_percent = getBracket(achievablePercent(total, absentCount)).min
+    }
+    const { error } = await supabase.from('courses').update(patch).eq('id', id)
+    setBusy(false)
+    if (error) setError(error.message)
+    else loadData()
   }
 
   async function switchMode(mode) {
@@ -108,6 +180,10 @@ export default function CourseDetail() {
   const proj = projection(present, total, course.target_percent)
   const teacherOptions = [course.teacher1, course.teacher2].filter(Boolean)
 
+  const fixedTotal = course.total_classes || computeTotalClasses(course.course_type, course.credit)
+  const absentForBracket = isQuick ? course.manual_absences || 0 : absent
+  const currentBracket = getBracket(achievablePercent(fixedTotal, absentForBracket))
+
   return (
     <div className="min-h-screen blueprint-grid">
       <header className="border-b border-border">
@@ -122,6 +198,25 @@ export default function CourseDetail() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6">
+        {bracketWarning && (
+          <div className="bg-danger/10 border border-danger/30 rounded-xl px-4 py-3 mb-4 flex items-start justify-between gap-3">
+            <p className="text-sm text-danger">
+              <strong>You just missed the {bracketWarning.from.marks}-mark bracket</strong> (needed{' '}
+              {bracketWarning.from.min}%+). Best you can still get in this course is{' '}
+              <strong>
+                {bracketWarning.to.marks} marks ({bracketWarning.to.min}%+)
+              </strong>
+              {bracketWarning.to.marks === 0 ? ' — no marks left for attendance this course.' : '.'}
+            </p>
+            <button
+              onClick={() => setBracketWarning(null)}
+              className="text-danger hover:opacity-70 transition shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         <div className="mb-2 flex items-start justify-between gap-3">
           <div>
             {course.code && (
@@ -141,6 +236,12 @@ export default function CourseDetail() {
             <Row label="Absent" value={absent} color="text-danger" />
             {!isQuick && <Row label="Cancelled (not counted)" value={cancelled} color="text-muted" />}
             {isQuick && <Row label="Total classes this semester" value={total} color="text-text" />}
+            <div className="flex justify-between items-center">
+              <span className="text-muted">Current marks bracket</span>
+              <span className="font-mono font-medium text-text">
+                {currentBracket.marks} marks ({currentBracket.min}%+)
+              </span>
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-muted">Required attendance</span>
               {editingTarget ? (
@@ -171,6 +272,8 @@ export default function CourseDetail() {
                     Cancel
                   </button>
                 </div>
+              ) : course.auto_target ? (
+                <span className="font-mono font-medium text-text">{course.target_percent}% (auto)</span>
               ) : (
                 <button
                   onClick={() => setEditingTarget(true)}
@@ -196,26 +299,37 @@ export default function CourseDetail() {
           </div>
         </div>
 
-        {/* tracking mode toggle */}
-        <div className="flex items-center justify-between mb-4 text-xs">
+        {/* mode + auto-target toggles */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-xs">
           <span className="text-muted">
             Tracking style: <span className="text-text font-medium">{isQuick ? 'Quick' : 'Detailed'}</span>
+            {' · '}
+            Target: <span className="text-text font-medium">{course.auto_target ? 'Auto (bracket)' : 'Manual'}</span>
           </span>
-          <button
-            disabled={busy}
-            onClick={() => switchMode(isQuick ? 'detailed' : 'quick')}
-            className="text-accent hover:opacity-80 transition disabled:opacity-50"
-          >
-            Switch to {isQuick ? 'detailed logging' : 'quick mode'}
-          </button>
+          <div className="flex gap-3">
+            <button
+              disabled={busy}
+              onClick={() => switchMode(isQuick ? 'detailed' : 'quick')}
+              className="text-accent hover:opacity-80 transition disabled:opacity-50"
+            >
+              Switch to {isQuick ? 'detailed logging' : 'quick mode'}
+            </button>
+            <button
+              disabled={busy}
+              onClick={toggleAutoTarget}
+              className="text-accent hover:opacity-80 transition disabled:opacity-50"
+            >
+              Turn {course.auto_target ? 'off' : 'on'} auto-target
+            </button>
+          </div>
         </div>
 
         {isQuick ? (
           <div className="bg-surface border border-border rounded-xl p-5 mb-6">
             <h2 className="font-display font-semibold mb-1">Absences this semester</h2>
             <p className="text-xs text-muted mb-4">
-              Out of {course.total_classes || computeTotalClasses(course.course_type, course.credit)} total
-              classes ({course.credit} credit {course.course_type}). Just tap +1 whenever you miss one.
+              Out of {fixedTotal} total classes ({course.credit} credit {course.course_type}). Just tap +1
+              whenever you miss one.
             </p>
             <div className="flex items-center justify-center gap-6">
               <button
