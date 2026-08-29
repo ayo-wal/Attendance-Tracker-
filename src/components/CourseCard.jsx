@@ -1,10 +1,15 @@
 import { Link } from 'react-router-dom'
 import AttendanceGauge from './AttendanceGauge'
-import { summarizeCourse, projection } from '../lib/attendanceMath'
+import { summarizeCourse, projection, computeTotalClasses } from '../lib/attendanceMath'
+import { getBracket, achievablePercent } from '../lib/marksBrackets'
 
 export default function CourseCard({ course, records }) {
   const { present, absent, total, percent } = summarizeCourse(course, records)
   const proj = projection(present, total, course.target_percent)
+
+  const fixedTotal = course.total_classes || computeTotalClasses(course.course_type, course.credit)
+  const absentForBracket = course.tracking_mode === 'quick' ? course.manual_absences || 0 : absent
+  const bracket = getBracket(achievablePercent(fixedTotal, absentForBracket))
 
   return (
     <Link
@@ -18,8 +23,13 @@ export default function CourseCard({ course, records }) {
           )}
           <h3 className="font-display font-semibold leading-tight truncate">{course.name}</h3>
         </div>
-        <span className="shrink-0 text-[10px] uppercase tracking-wide rounded-full border border-border px-2 py-0.5 text-muted">
-          {course.tracking_mode === 'quick' ? 'Quick' : 'Detailed'}
+        <span className="shrink-0 flex flex-col items-end gap-1">
+          <span className="text-[10px] uppercase tracking-wide rounded-full border border-border px-2 py-0.5 text-muted">
+            {course.tracking_mode === 'quick' ? 'Quick' : 'Detailed'}
+          </span>
+          <span className="text-[10px] font-mono rounded-full bg-surface-2 px-2 py-0.5 text-muted">
+            {bracket.marks} marks
+          </span>
         </span>
       </div>
 

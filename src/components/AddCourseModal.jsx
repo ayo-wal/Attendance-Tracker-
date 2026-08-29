@@ -190,6 +190,7 @@ function ManualTab({ onClose, onCreated }) {
   const [credit, setCredit] = useState(3)
   const [trackingMode, setTrackingMode] = useState('quick')
   const [target, setTarget] = useState(75)
+  const [autoTarget, setAutoTarget] = useState(true)
   const [teacher1, setTeacher1] = useState('')
   const [teacher2, setTeacher2] = useState('')
   const [error, setError] = useState('')
@@ -211,6 +212,7 @@ function ManualTab({ onClose, onCreated }) {
       tracking_mode: trackingMode,
       manual_absences: 0,
       target_percent: target,
+      auto_target: autoTarget,
       teacher1: teacher1 || null,
       teacher2: teacher2 || null,
     })
@@ -293,16 +295,30 @@ function ManualTab({ onClose, onCreated }) {
       </div>
 
       <div>
-        <label className="block text-xs text-muted mb-1">Required attendance %</label>
-        <input
-          type="number"
-          min={1}
-          max={100}
-          required
-          value={target}
-          onChange={(e) => setTarget(Number(e.target.value))}
-          className="w-full rounded-lg bg-surface-2 border border-border px-3 py-2 text-sm outline-none focus:border-accent"
-        />
+        <label className="flex items-center gap-2 text-xs text-muted mb-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoTarget}
+            onChange={(e) => setAutoTarget(e.target.checked)}
+            className="accent-[var(--color-accent)]"
+          />
+          Auto-target by RUET marks bracket (recommended — target adjusts automatically as your
+          best-achievable bracket changes)
+        </label>
+        {!autoTarget && (
+          <>
+            <label className="block text-xs text-muted mb-1">Required attendance %</label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              required
+              value={target}
+              onChange={(e) => setTarget(Number(e.target.value))}
+              className="w-full rounded-lg bg-surface-2 border border-border px-3 py-2 text-sm outline-none focus:border-accent"
+            />
+          </>
+        )}
       </div>
 
       <div>
