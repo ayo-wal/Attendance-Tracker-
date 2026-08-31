@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 
 export default function ResetPassword() {
-  const { updatePassword, clearRecovery, session } = useAuth()
+  const [searchParams] = useSearchParams()
+  const token = searchParams.get('token')
   const navigate = useNavigate()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -23,24 +23,36 @@ export default function ResetPassword() {
       return
     }
     setBusy(true)
-    const { error } = await updatePassword(password)
-    setBusy(false)
-    if (error) {
-      setError(error.message)
-    } else {
-      setDone(true)
-      clearRecovery()
-      setTimeout(() => navigate('/'), 1500)
+    try {
+      const res = await fetch('/.netlify/functions/verify-and-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, newPassword: password }),
+      })
+      const data = await res.json()
+      setBusy(false)
+      if (!res.ok) {
+        setError(data.error || 'Something went wrong.')
+      } else {
+        setDone(true)
+        setTimeout(() => navigate('/auth'), 2000)
+      }
+    } catch {
+      setBusy(false)
+      setError('Something went wrong. Please try again.')
     }
   }
 
-  if (!session) {
+  if (!token) {
     return (
       <div className="min-h-screen flex items-center justify-center blueprint-grid px-4">
         <div className="w-full max-w-sm bg-surface border border-border rounded-xl p-6 text-center">
-          <p className="text-sm text-muted">
-            This reset link is invalid or has expired. Request a new one from the sign-in page.
+          <p className="text-sm text-muted mb-3">
+            This reset link is missing its token. Request a new one from the sign-in page.
           </p>
+          <Link to="/auth" className="text-xs text-accent hover:opacity-80 transition">
+            ← Back to sign in
+          </Link>
         </div>
       </div>
     )
@@ -50,13 +62,13 @@ export default function ResetPassword() {
     <div className="min-h-screen flex items-center justify-center blueprint-grid px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="font-mono text-xs tracking-widest text-accent uppercase mb-1">Mecha Verse</div>
+          <div className="font-mono text-xs tracking-widest text-accent uppercase mb-1">Ayo-Wal</div>
           <h1 className="font-display text-2xl font-semibold">Set a new password</h1>
         </div>
 
         <div className="bg-surface border border-border rounded-xl p-6">
           {done ? (
-            <p className="text-sm text-safe text-center">Password updated. Taking you to your dashboard…</p>
+            <p className="text-sm text-safe text-center">Password updated. Taking you to sign in…</p>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>

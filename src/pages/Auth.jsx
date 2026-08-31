@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 export default function Auth() {
-  const { signIn, signUp, resetPassword } = useAuth()
+  const { signIn, signUp } = useAuth()
   const [mode, setMode] = useState('signin') // 'signin' | 'signup' | 'forgot'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -17,10 +17,20 @@ export default function Auth() {
     setBusy(true)
 
     if (mode === 'forgot') {
-      const { error } = await resetPassword(email)
-      setBusy(false)
-      if (error) setError(error.message)
-      else setInfo("If that email has an account, we've sent a password reset link. Check your inbox.")
+      try {
+        const res = await fetch('/.netlify/functions/request-reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        })
+        const data = await res.json()
+        setBusy(false)
+        if (!res.ok) setError(data.error || 'Something went wrong.')
+        else setInfo(data.message)
+      } catch {
+        setBusy(false)
+        setError('Something went wrong. Please try again.')
+      }
       return
     }
 
@@ -39,7 +49,7 @@ export default function Auth() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <div className="font-mono text-xs tracking-widest text-accent uppercase mb-1">
-            Mecha Verse
+            Ayo-Wal
           </div>
           <h1 className="font-display text-2xl font-semibold">Attendance Tracker</h1>
         </div>
